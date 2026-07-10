@@ -122,6 +122,16 @@ module ZeroXDA
           end
         end
 
+        class PendingResult
+          attr_reader :reference, :data
+
+          def initialize(reference:, data: {})
+            @reference = RecordSupport.identifier(reference, field: "pending reference")
+            @data = RecordSupport.document(data, field: "data")
+            freeze
+          end
+        end
+
         module_function
 
         def validate_provider!(provider)
@@ -138,4 +148,3 @@ module ZeroXDA
     end
   end
 end
-

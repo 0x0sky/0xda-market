@@ -139,7 +139,7 @@ module ZeroXDA
       end
 
       class Order
-        STATUSES = %w[accepted processing succeeded failed cancelled].freeze
+        STATUSES = %w[accepted processing pending succeeded failed cancelled].freeze
 
         attr_reader :id,
                     :intent_id,
@@ -152,6 +152,7 @@ module ZeroXDA
                     :private_state,
                     :status,
                     :attempts,
+                    :progress,
                     :result,
                     :failure,
                     :created_at,
@@ -170,6 +171,7 @@ module ZeroXDA
           private_state: {},
           status: "accepted",
           attempts: 0,
+          progress: nil,
           result: nil,
           failure: nil,
           created_at:,
@@ -189,6 +191,7 @@ module ZeroXDA
           @private_state = RecordSupport.document(private_state, field: "private_state")
           @status = status.dup.freeze
           @attempts = RecordSupport.non_negative_integer(attempts, field: "attempts")
+          @progress = RecordSupport.optional_document(progress, field: "progress")
           @result = RecordSupport.optional_document(result, field: "result")
           @failure = RecordSupport.optional_document(failure, field: "failure")
           @created_at = RecordSupport.time(created_at, field: "created_at")
@@ -200,4 +203,3 @@ module ZeroXDA
     end
   end
 end
-

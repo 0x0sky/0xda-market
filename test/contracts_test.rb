@@ -29,6 +29,18 @@ class ContractsTest < Minitest::Test
     assert result.data.frozen?
   end
 
+  def test_pending_result_carries_pollable_provider_progress
+    result = Core::Contracts::PendingResult.new(
+      reference: "task-1",
+      data: { status: "awaiting_operator" }
+    )
+
+    assert_equal "task-1", result.reference
+    assert_equal "awaiting_operator", result.data.fetch("status")
+    assert result.frozen?
+    assert result.data.frozen?
+  end
+
   def test_provider_contract_reports_missing_methods
     error = assert_raises(Core::ProviderContractError) do
       Core::Contracts.validate_provider!(Object.new)
@@ -50,4 +62,3 @@ class ContractsTest < Minitest::Test
     assert_equal "provider", error.details.fetch("upstream")
   end
 end
-

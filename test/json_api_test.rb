@@ -54,6 +54,40 @@ class JSONAPITest < Minitest::Test
     assert_equal({ "status" => "ok" }, JSON.parse(response.body))
   end
 
+  def test_exposes_deferred_execution_progress
+    clock = MutableClock.new
+    provider = TestProvider.new(clock: clock) do |_order, _idempotency_key|
+      ZeroXDA::Market::Core::Contracts::PendingResult.new(
+        reference: "task-1",
+        data: { status: "awaiting_operator" }
+      )
+    end
+    kernel, = build_kernel(provider: provider, clock: clock)
+    client = Rack::MockRequest.new(
+      ZeroXDA::Market::Transport::JSONAPI.new(kernel: kernel)
+    )
+    intent = resource(
+      post_json_with(client, "/v1/intents", capability: "anything.operation", payload: {}),
+      expected_status: 201
+    )
+    quote = resource(
+      post_json_with(client, "/v1/intents/#{intent.fetch("id")}/quotes", {}),
+      expected_status: 201
+    )
+    order = resource(
+      post_json_with(client, "/v1/quotes/#{quote.fetch("id")}/accept", {}),
+      expected_status: 201
+    )
+
+    pending = resource(
+      post_json_with(client, "/v1/orders/#{order.fetch("id")}/execute", {}),
+      expected_status: 200
+    )
+
+    assert_equal "pending", pending.dig("attributes", "status")
+    assert_equal "task-1", pending.dig("attributes", "progress", "reference")
+  end
+
   def test_reports_invalid_json
     response = @client.post(
       "/v1/intents",
@@ -78,7 +112,11 @@ class JSONAPITest < Minitest::Test
   private
 
   def post_json(path, body)
-    @client.post(
+    post_json_with(@client, path, body)
+  end
+
+  def post_json_with(client, path, body)
+    client.post(
       path,
       "CONTENT_TYPE" => "application/json",
       input: JSON.generate(body)
@@ -90,4 +128,3 @@ class JSONAPITest < Minitest::Test
     JSON.parse(response.body).fetch("data")
   end
 end
-

@@ -87,6 +87,39 @@ class KernelTest < Minitest::Test
     assert_equal 2, completed.attempts
   end
 
+  def test_resumes_a_deferred_execution_without_counting_polling_as_an_attempt
+    calls = 0
+    provider = TestProvider.new(clock: @clock) do |_order, _idempotency_key|
+      calls += 1
+      if calls == 1
+        Core::Contracts::PendingResult.new(
+          reference: "task-1",
+          data: { status: "awaiting_operator" }
+        )
+      else
+        Core::Contracts::ExecutionResult.new(
+          reference: "manual-result-1",
+          data: { status: "completed" }
+        )
+      end
+    end
+    kernel, = build_kernel(provider: provider, clock: @clock)
+    intent = kernel.create_intent(capability: "anything.operation", payload: {})
+    quote = kernel.quote_intent(intent.id)
+    order = kernel.accept_quote(quote.id)
+
+    pending = kernel.execute_order(order.id)
+    assert_equal "pending", pending.status
+    assert_equal "task-1", pending.progress.fetch("reference")
+    assert_equal 1, pending.attempts
+
+    completed = kernel.execute_order(order.id)
+    assert_equal "succeeded", completed.status
+    assert_nil completed.progress
+    assert_equal "manual-result-1", completed.result.fetch("reference")
+    assert_equal 1, completed.attempts
+  end
+
   def test_cancelled_order_cannot_execute
     intent = @kernel.create_intent(capability: "anything.operation", payload: {})
     quote = @kernel.quote_intent(intent.id)
@@ -105,4 +138,3 @@ class KernelTest < Minitest::Test
     assert_equal "missing.operation", error.details.fetch("capability")
   end
 end
-
