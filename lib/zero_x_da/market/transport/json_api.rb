@@ -164,6 +164,7 @@ module ZeroXDA
               "terms" => order.terms,
               "status" => order.status,
               "attempts" => order.attempts,
+              "progress" => order.progress,
               "result" => order.result,
               "failure" => order.failure,
               "created_at" => timestamp(order.created_at),
@@ -206,4 +207,3 @@ module ZeroXDA
     end
   end
 end
-

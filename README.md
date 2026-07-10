@@ -1,171 +1,179 @@
 # 0xda Market
 
-Provider-agnostic crypto market intelligence engine.
+Provider-agnostic execution core for turning a client intent into a quoted,
+accepted and fulfilled order.
 
-Initially powered by the TON ecosystem and exposed through a Telegram bot, while remaining independent of any specific blockchain, exchange or marketplace.
+The core does not know what is being bought, sold or performed. Capabilities,
+payloads, quote terms and provider state remain opaque JSON documents, so a
+provider can represent a blockchain operation, a digital product or a human
+workflow without changing the lifecycle engine.
 
-The project collects market data, normalizes it into a common domain model, computes trading metrics and produces transparent pricing recommendations.
+## Current status
 
-Current focus:
+The repository contains a runnable Rack application with:
 
-- TON
-- USDT (TON Jetton)
+- immutable intent, quote and order records;
+- provider contracts and normalized provider failures;
+- idempotent quote acceptance and order execution;
+- synchronous and deferred execution;
+- optimistic concurrency and transactional in-memory storage;
+- a public JSON API;
+- an authenticated operator API for `ManualProvider`;
+- a complete in-memory manual fulfillment workflow.
 
-## Planned providers
+The current store is intentionally ephemeral. Restarting the process removes
+all records and manual tasks.
 
-### Blockchains
+## Lifecycle
 
-- TON
-- Ethereum
-- Solana
-- Base
-- BNB Chain
+```text
+intent -> quote -> accepted order -> processing -> succeeded
+                                      |
+                                      +-> pending -> processing -> succeeded
+                                      |
+                                      +-> failed (retryable or terminal)
+                                      |
+                                      +-> cancelled
+```
 
-### Decentralized Exchanges
+Providers implement three methods:
 
-- STON.fi
-- DeDust
-- Uniswap
-- PancakeSwap
-- Jupiter
+```ruby
+provider.key
+provider.quote(intent:)
+provider.execute(order:, idempotency_key:)
+```
 
-### Centralized Exchanges
+`execute` returns either a final `ExecutionResult` or a `PendingResult`. A
+pending order can be executed again to poll or resume provider work. Polling a
+pending execution does not increase the attempt counter.
 
-- Binance
-- Bybit
-- WhiteBIT
-- Kraken
-- Coinbase Exchange
+## ManualProvider
 
-### Marketplaces
+`ManualProvider` turns execution into an operator task. This allows an iOS
+app, CLI, WhatsApp bot or another operator-facing client to fulfill orders
+without coupling that client to the core.
 
-- Fragment
-- Telegram Premium
-- Telegram Stars
-- Telegram Gifts
+1. A consumer creates an intent with capability `manual.fulfillment`.
+2. The consumer creates and accepts a quote.
+3. Executing the order creates one idempotent manual task and returns `pending`.
+4. An authenticated operator client lists and completes or rejects the task.
+5. Executing the pending order again resolves it from the operator decision.
 
----
+The provider and its operator task queue are in memory. Durable storage and
+task claiming are the next infrastructure boundary, not core concerns.
 
-## Goals
+## Run
 
-Instead of predicting markets, 0xda Market aims to measure them.
+Ruby `3.3.11` is required.
 
-Every recommendation should be reproducible from observable market data.
+```sh
+bundle install
+MANUAL_PROVIDER_TOKEN=replace-me bundle exec rackup
+```
 
----
+Without `MANUAL_PROVIDER_TOKEN`, the application starts in health-only mode
+with no registered capability. With the token set, it exposes:
 
-## Features
+- public API: `http://localhost:9292/v1/...`
+- operator API: `http://localhost:9292/operator/v1/...`
+- health check: `http://localhost:9292/health`
 
-### Asset markets
+Do not expose the operator API with a short or shared token.
 
-- best bid
-- best ask
-- weighted ask
-- spread
-- last trade
-- liquidity estimation
-- fee estimation
-- historical snapshots
-- pricing recommendations
+## Public API example
 
-### Product marketplaces
+Create an intent:
 
-- floor price
-- average ask
-- median ask
-- new listings
-- confirmed sales
-- estimated sale time
-- fee estimation
-- pricing recommendations
+```sh
+curl -sS http://localhost:9292/v1/intents \
+  -H 'content-type: application/json' \
+  -d '{
+    "capability": "manual.fulfillment",
+    "payload": {"action": "deliver", "item": "example"},
+    "context": {"customer_id": "customer-1"}
+  }'
+```
 
----
+Continue the lifecycle using the returned identifiers:
+
+```sh
+curl -sS -X POST http://localhost:9292/v1/intents/INTENT_ID/quotes \
+  -H 'content-type: application/json' -d '{}'
+
+curl -sS -X POST http://localhost:9292/v1/quotes/QUOTE_ID/accept \
+  -H 'content-type: application/json' -d '{}'
+
+curl -sS -X POST http://localhost:9292/v1/orders/ORDER_ID/execute \
+  -H 'content-type: application/json' -d '{}'
+```
+
+The first execution returns an order with status `pending` and a manual task
+identifier in `data.attributes.progress.reference`.
+
+## Operator API example
+
+```sh
+curl -sS http://localhost:9292/operator/v1/tasks?status=pending \
+  -H 'authorization: Bearer replace-me'
+
+curl -sS -X POST \
+  http://localhost:9292/operator/v1/tasks/TASK_ID/complete \
+  -H 'authorization: Bearer replace-me' \
+  -H 'content-type: application/json' \
+  -d '{
+    "reference": "external-result-1",
+    "data": {"delivered": true}
+  }'
+```
+
+An operator can reject a task instead:
+
+```sh
+curl -sS -X POST \
+  http://localhost:9292/operator/v1/tasks/TASK_ID/reject \
+  -H 'authorization: Bearer replace-me' \
+  -H 'content-type: application/json' \
+  -d '{
+    "message": "cannot fulfill",
+    "code": "out_of_scope",
+    "details": {"category": "unsupported"}
+  }'
+```
+
+## Test
+
+```sh
+bundle exec rake
+```
 
 ## Architecture
 
-```
-                Interfaces
-
-Telegram Bot
-REST API
-CLI
-
-        │
-
-Market Engine
-
-        │
-
-Providers
-
-TON
-Ethereum
-Solana
-Centralized Exchanges
-
-        │
-
-Venues
-
-STON.fi
-DeDust
-Fragment
-...
+```text
+Consumer clients                 Operator clients
+iOS / CLI / bot / HTTP           iOS / CLI / WhatsApp bot
+        |                                  |
+        v                                  v
+Public JSON API                     Manual operator API
+        |                                  |
+        v                                  v
+Provider-agnostic core  <----->       ManualProvider
+        |
+        v
+Store adapter
 ```
 
-The Market Engine never depends on a specific provider.
+Provider-specific behavior lives under `lib/zero_x_da/market/providers`.
+The core never imports a provider implementation.
 
-TON is simply the first implementation.
+## Next boundaries
 
----
-
-## Project Status
-
-Early development.
-
-The first milestone is a read-only market intelligence engine for TON / USDT.
-
----
-
-## Roadmap
-
-### v0.1
-
-- Core domain
-- TON provider
-- TON/USDT market
-- Telegram interface
-
-### v0.2
-
-- Historical snapshots
-- Pricing engine
-- Alerts
-
-### v0.3
-
-- Multiple liquidity venues
-- Market aggregation
-
-### v0.4
-
-- Telegram Premium
-
-### v0.5
-
-- Telegram Stars
-
----
-
-## Principles
-
-- provider agnostic
-- deterministic calculations
-- transparent recommendations
-- reproducible metrics
-- engineering-first design
-
----
+- durable SQL-backed store;
+- durable manual task repository and task claiming;
+- request authentication and consumer ownership;
+- capability-specific quote policies;
+- deployment packaging and production observability;
+- external providers added independently of the core.
 
 ## License
 

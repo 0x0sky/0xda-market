@@ -98,7 +98,8 @@ module ZeroXDA
               order: started,
               idempotency_key: "orders/#{started.id}/execute"
             )
-            unless execution.is_a?(Contracts::ExecutionResult)
+            unless execution.is_a?(Contracts::ExecutionResult) ||
+                   execution.is_a?(Contracts::PendingResult)
               raise ProviderContractError.new(
                 "provider execution returned an invalid result"
               )
@@ -118,7 +119,11 @@ module ZeroXDA
             raise wrapped
           end
 
-          complete_execution(started, result)
+          if result.is_a?(Contracts::PendingResult)
+            defer_execution(started, result)
+          else
+            complete_execution(started, result)
+          end
         end
 
         def cancel_order(id)
@@ -149,7 +154,7 @@ module ZeroXDA
             next order if order.status == "succeeded"
 
             retryable = order.status == "failed" && order.failure.fetch("retryable", false)
-            unless order.status == "accepted" || retryable
+            unless %w[accepted pending].include?(order.status) || retryable
               raise InvalidTransition.new(
                 resource: "order",
                 id: order.id,
@@ -158,16 +163,40 @@ module ZeroXDA
               )
             end
 
+            attempts = order.status == "pending" ? order.attempts : order.attempts + 1
             started = rebuild_order(
               order,
               status: "processing",
-              attempts: order.attempts + 1,
+              attempts: attempts,
               result: nil,
               failure: nil,
               updated_at: now,
               version: order.version + 1
             )
             store.replace(:orders, started, expected_version: order.version)
+          end
+        end
+
+        def defer_execution(started, pending)
+          now = current_time
+
+          @store.transaction do |store|
+            current = store.fetch(:orders, started.id)
+            ensure_same_attempt!(started, current)
+
+            deferred = rebuild_order(
+              current,
+              status: "pending",
+              progress: {
+                reference: pending.reference,
+                data: pending.data
+              },
+              result: nil,
+              failure: nil,
+              updated_at: now,
+              version: current.version + 1
+            )
+            store.replace(:orders, deferred, expected_version: current.version)
           end
         end
 
@@ -181,6 +210,7 @@ module ZeroXDA
             completed = rebuild_order(
               current,
               status: "succeeded",
+              progress: nil,
               result: {
                 reference: execution.reference,
                 data: execution.data
@@ -203,6 +233,7 @@ module ZeroXDA
             failed = rebuild_order(
               current,
               status: "failed",
+              progress: nil,
               result: nil,
               failure: {
                 code: error.code,
@@ -285,6 +316,7 @@ module ZeroXDA
             private_state: order.private_state,
             status: order.status,
             attempts: order.attempts,
+            progress: order.progress,
             result: order.result,
             failure: order.failure,
             created_at: order.created_at,
@@ -312,4 +344,3 @@ module ZeroXDA
     end
   end
 end
-
