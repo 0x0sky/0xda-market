@@ -104,9 +104,9 @@ class RuntimeTest < Minitest::Test
       assert_includes error.message, "PUBLIC_API_TOKEN"
       assert_includes error.message, "MANUAL_PROVIDER_TOKEN"
       assert_includes error.message, "DATABASE_URL"
-      assert_includes error.message, "TELEGRAM_CLIENT_BOT_TOKEN"
-      assert_includes error.message, "TELEGRAM_BROKER_BOT_TOKEN"
-      assert_includes error.message, "TELEGRAM_WEBHOOK_BASE_URL"
+      refute_includes error.message, "TELEGRAM_CLIENT_BOT_TOKEN"
+      refute_includes error.message, "TELEGRAM_BROKER_BOT_TOKEN"
+      refute_includes error.message, "TELEGRAM_WEBHOOK_BASE_URL"
     end
   end
 
