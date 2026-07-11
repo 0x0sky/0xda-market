@@ -66,7 +66,9 @@ class PostgresPersistenceTest < Minitest::Test
   def test_migrations_are_idempotent
     migrate(@database)
 
-    versions = @database.connection[:market__schema_migrations].select_map(:version)
+    versions = @database.connection[
+      Sequel.qualify(:market, :schema_migrations)
+    ].select_map(:version)
     assert_equal ["001_initial"], versions
   end
 

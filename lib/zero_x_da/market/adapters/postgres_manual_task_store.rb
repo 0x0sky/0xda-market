@@ -10,7 +10,7 @@ module ZeroXDA
       class PostgresManualTaskStore
         def initialize(database:)
           @connection = database.connection
-          @tasks = @connection[:market__manual_tasks]
+          @tasks = @connection[Sequel.qualify(:market, :manual_tasks)]
         end
 
         def transaction
