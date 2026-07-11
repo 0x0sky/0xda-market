@@ -114,9 +114,9 @@ except `/health`. With the API tokens set, the application exposes:
 - operator API: `http://localhost:9292/operator/v1/...`
 - health check: `http://localhost:9292/health`
 
-Production boot fails unless the API tokens, Telegram bot tokens, webhook URL
-and `DATABASE_URL` are configured. Do not reuse the same value for consumer
-and operator access.
+Production boot requires the two API tokens and `DATABASE_URL`. Telegram bot
+tokens are optional and belong in dedicated bot services. Do not reuse the same
+value for consumer and operator access.
 
 ## Telegram demo bots
 
@@ -134,7 +134,9 @@ client request -> broadcast to ready brokers -> one broker accepts
                -> mock payment -> broker completes -> client receives result
 ```
 
-Configure the bots with secrets rather than committing access tokens:
+The legacy in-process Telegram demo transport is optional. Dedicated bot
+services should call the public API and keep their bot tokens outside this core
+service. To run the legacy transport locally, configure all three values:
 
 ```sh
 TELEGRAM_CLIENT_BOT_TOKEN='BotFather client token' \
@@ -260,19 +262,19 @@ so concurrent deploy starts cannot apply the same migration twice.
 ## Render
 
 `render.yaml` defines a free Frankfurt web service built from the repository's
-Dockerfile. It configures `/health`, prompts for the API, database and Telegram
-secrets, and deploys only after all GitHub CI checks pass.
+Dockerfile. It configures `/health`, prompts for the API and database secrets,
+and deploys only after all GitHub CI checks pass.
 
 1. Merge the deployment PR into `master`.
 2. In Render, create a new Blueprint and select this repository.
 3. Enter distinct values for `PUBLIC_API_TOKEN` and `MANUAL_PROVIDER_TOKEN`.
-4. Enter the BotFather tokens as `TELEGRAM_CLIENT_BOT_TOKEN` and
-   `TELEGRAM_BROKER_BOT_TOKEN`.
-5. Keep `TELEGRAM_WEBHOOK_BASE_URL` set to
-   `https://zeroxda-market.onrender.com`.
-6. Enter the Supabase Session Pooler URI as `DATABASE_URL`, replacing
+4. Enter the Supabase Session Pooler URI as `DATABASE_URL`, replacing
    `[YOUR-PASSWORD]` and appending `?sslmode=require`.
-7. Apply the Blueprint and wait for the health check to pass.
+5. Apply the Blueprint and wait for the health check to pass.
+
+Keep `TELEGRAM_CLIENT_BOT_TOKEN`, `TELEGRAM_BROKER_BOT_TOKEN` and
+`TELEGRAM_WEBHOOK_BASE_URL` in their dedicated bot services, not in the core
+Render service.
 
 Render rebuilds and deploys subsequent `master` commits after CI succeeds.
 The `market` schema is private to the backend connection; no domain tables are
