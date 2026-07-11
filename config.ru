@@ -33,10 +33,7 @@ if environment == "production"
   required_secrets = {
     "PUBLIC_API_TOKEN" => public_token,
     "MANUAL_PROVIDER_TOKEN" => operator_token,
-    "DATABASE_URL" => database_url,
-    "TELEGRAM_CLIENT_BOT_TOKEN" => ENV["TELEGRAM_CLIENT_BOT_TOKEN"],
-    "TELEGRAM_BROKER_BOT_TOKEN" => ENV["TELEGRAM_BROKER_BOT_TOKEN"],
-    "TELEGRAM_WEBHOOK_BASE_URL" => ENV["TELEGRAM_WEBHOOK_BASE_URL"]
+    "DATABASE_URL" => database_url
   }
   missing = required_secrets.filter_map do |name, value|
     name if value.nil? || value.empty?
