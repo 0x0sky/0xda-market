@@ -21,11 +21,39 @@ The repository contains a runnable Rack application with:
 - an authenticated operator API for `ManualProvider`;
 - a durable manual fulfillment workflow;
 - two webhook-based Telegram demo bots for the client and broker roles.
+- provider-independent users with Telegram identity authentication.
 
 When `DATABASE_URL` is configured, intents, quotes, orders and manual tasks are
 stored in the private PostgreSQL schema `market` and survive deploys and
 process restarts. Development can still run without PostgreSQL using the
 in-memory adapters.
+
+## User identities
+
+`market.users` owns the stable internal UUID, role and account status.
+`market.user_identities` links that user to external authentication providers.
+Transactions and other domain records should reference the internal user UUID,
+never a Telegram ID.
+
+The client bot authenticates a Telegram user through the protected public API:
+
+```sh
+curl -sS http://localhost:9292/v1/auth/telegram \
+  -H 'authorization: Bearer client-secret' \
+  -H 'content-type: application/json' \
+  -d '{
+    "telegram_user_id": "123456789",
+    "chat_id": "123456789",
+    "username": "example",
+    "first_name": "Sasha",
+    "language_code": "uk"
+  }'
+```
+
+The first request creates a `client` user and Telegram identity and returns
+`201`. Later requests return `200`, preserve the same internal user UUID and
+refresh provider profile data. The model can add Apple, email or other
+identities without changing the user record.
 
 ## Lifecycle
 

@@ -18,6 +18,9 @@ require_relative "lib/zero_x_da/market/telegram/configuration"
 require_relative "lib/zero_x_da/market/telegram/demo_flow"
 require_relative "lib/zero_x_da/market/telegram/memory_store"
 require_relative "lib/zero_x_da/market/telegram/webhook"
+require_relative "lib/zero_x_da/market/identity/memory_store"
+require_relative "lib/zero_x_da/market/identity/postgres_store"
+require_relative "lib/zero_x_da/market/identity/telegram_auth_service"
 
 clock = -> { Time.now.utc }
 environment = ENV.fetch("RACK_ENV", "development")
@@ -54,6 +57,11 @@ store = database ? ZeroXDA::Market::Adapters::PostgresStore.new(database: databa
 task_store = if database
                ZeroXDA::Market::Adapters::PostgresManualTaskStore.new(database: database)
              end
+identity_store = if database
+                   ZeroXDA::Market::Identity::PostgresStore.new(database: database)
+                 else
+                   ZeroXDA::Market::Identity::MemoryStore.new
+                 end
 
 manual_provider = if operator_token && !operator_token.empty?
                     ZeroXDA::Market::Providers::ManualProvider.new(
@@ -74,7 +82,11 @@ kernel = ZeroXDA::Market::Core::Kernel.new(
 public_api = ZeroXDA::Market::Transport::JSONAPI.new(
   kernel: kernel,
   token: public_token,
-  readiness: -> { store.healthy? }
+  readiness: -> { store.healthy? },
+  identity_service: ZeroXDA::Market::Identity::TelegramAuthService.new(
+    store: identity_store,
+    clock: clock
+  )
 )
 
 applications = { "/" => public_api }

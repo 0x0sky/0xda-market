@@ -16,10 +16,11 @@ module ZeroXDA
           "cache-control" => "no-store"
         }.freeze
 
-        def initialize(kernel:, token: nil, readiness: -> { true })
+        def initialize(kernel:, token: nil, readiness: -> { true }, identity_service: nil)
           @kernel = kernel
           @authentication = token && BearerAuth.new(token: token)
           @readiness = readiness
+          @identity_service = identity_service
         end
 
         def call(environment)
@@ -71,6 +72,16 @@ module ZeroXDA
           if method == "GET" && path == "/health"
             ready = @readiness.call
             return json_response(ready ? 200 : 503, { "status" => ready ? "ok" : "unavailable" })
+          end
+
+          if method == "POST" && path == "/v1/auth/telegram" && @identity_service
+            body = request_document(request)
+            authentication = @identity_service.authenticate(
+              provider_user_id: body.fetch("telegram_user_id"),
+              provider_data: telegram_provider_data(body)
+            )
+            status = authentication.created ? 201 : 200
+            return resource_response(status, present_authentication(authentication))
           end
 
           if method == "POST" && path == "/v1/intents"
@@ -155,6 +166,55 @@ module ZeroXDA
               "created_at" => timestamp(intent.created_at)
             }
           }
+        end
+
+        def present_authentication(authentication)
+          user = authentication.user
+          identity = authentication.identity
+          {
+            "type" => "user",
+            "id" => user.id,
+            "attributes" => {
+              "role" => user.role,
+              "status" => user.status,
+              "created_at" => timestamp(user.created_at),
+              "updated_at" => timestamp(user.updated_at),
+              "identity" => {
+                "provider" => identity.provider,
+                "provider_user_id" => identity.provider_user_id,
+                "provider_data" => identity.provider_data,
+                "last_authenticated_at" => timestamp(identity.last_authenticated_at)
+              }
+            },
+            "meta" => { "created" => authentication.created }
+          }
+        end
+
+        def telegram_provider_data(body)
+          {
+            "chat_id" => external_identifier(body.fetch("chat_id"), "chat_id"),
+            "username" => optional_string(body["username"], "username"),
+            "first_name" => optional_string(body["first_name"], "first_name"),
+            "last_name" => optional_string(body["last_name"], "last_name"),
+            "language_code" => optional_string(body["language_code"], "language_code")
+          }.compact
+        end
+
+        def external_identifier(value, field)
+          string = value.to_s
+          raise ArgumentError, "#{field} must not be empty" if string.empty?
+          raise ArgumentError, "#{field} is too long" if string.bytesize > 128
+
+          string
+        end
+
+        def optional_string(value, field)
+          return nil if value.nil?
+
+          string = value.to_s
+          raise ArgumentError, "#{field} is too long" if string.bytesize > 256
+
+          string.empty? ? nil : string
         end
 
         def present_quote(quote)
