@@ -7,6 +7,8 @@ require "zero_x_da/market/adapters/postgres_store"
 require "zero_x_da/market/adapters/postgres_manual_task_store"
 require "zero_x_da/market/adapters/postgres_telegram_store"
 require "zero_x_da/market/providers/manual_provider"
+require "zero_x_da/market/identity/postgres_store"
+require "zero_x_da/market/identity/telegram_auth_service"
 
 class PostgresPersistenceTest < Minitest::Test
   DATABASE_URL = ENV["TEST_DATABASE_URL"]
@@ -17,7 +19,9 @@ class PostgresPersistenceTest < Minitest::Test
     @database = connect
     migrate(@database)
     @database.connection.run(<<~SQL)
-      TRUNCATE market.telegram_updates,
+      TRUNCATE market.user_identities,
+               market.users,
+               market.telegram_updates,
                market.telegram_brokers,
                market.telegram_demo_orders,
                market.manual_tasks,
@@ -76,7 +80,37 @@ class PostgresPersistenceTest < Minitest::Test
     versions = @database.connection[
       Sequel.qualify(:market, :schema_migrations)
     ].select_map(:version)
-    assert_equal %w[001_initial 002_telegram_demo], versions
+    assert_equal %w[001_initial 002_telegram_demo 003_users_and_identities], versions
+  end
+
+  def test_telegram_identity_survives_reconnection
+    clock = MutableClock.new
+    identifiers = [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ].each
+    service = build_identity_service(@database, clock, -> { identifiers.next })
+    first = service.authenticate(
+      provider_user_id: 77,
+      provider_data: { chat_id: "77", username: "zero" }
+    )
+
+    @database.disconnect
+    @database = connect
+    restarted = build_identity_service(
+      @database,
+      clock,
+      -> { raise "an existing identity must not generate another id" }
+    )
+    second = restarted.authenticate(
+      provider_user_id: 77,
+      provider_data: { chat_id: "770", username: "zero_updated" }
+    )
+
+    refute second.created
+    assert_equal first.user.id, second.user.id
+    assert_equal first.identity.id, second.identity.id
+    assert_equal "770", second.identity.provider_data.fetch("chat_id")
   end
 
   def test_telegram_broker_and_demo_order_state_survive_reconnection
@@ -178,5 +212,13 @@ class PostgresPersistenceTest < Minitest::Test
       id_generator: id_generator
     )
     [kernel, provider]
+  end
+
+  def build_identity_service(database, clock, id_generator)
+    ZeroXDA::Market::Identity::TelegramAuthService.new(
+      store: ZeroXDA::Market::Identity::PostgresStore.new(database: database),
+      clock: clock,
+      id_generator: id_generator
+    )
   end
 end

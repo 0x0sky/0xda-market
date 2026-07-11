@@ -48,6 +48,15 @@ class RuntimeTest < Minitest::Test
       )
       assert_equal 201, intent.status
 
+      authentication = post_json(
+        app,
+        "/v1/auth/telegram",
+        { telegram_user_id: 77, chat_id: 77, username: "zero" },
+        authorization: "Bearer client-secret"
+      )
+      assert_equal 201, authentication.status
+      assert_equal "client", JSON.parse(authentication.body).dig("data", "attributes", "role")
+
       public_unauthorized = post_json(
         app,
         "/v1/intents",
