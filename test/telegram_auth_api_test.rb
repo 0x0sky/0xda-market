@@ -84,9 +84,10 @@ class TelegramAuthAPITest < Minitest::Test
     assert_equal 2, document.dig("meta", "count")
     assert_equal [first, second].map { |item| JSON.parse(item.body).dig("data", "id") },
                  document.fetch("data").map { |item| item.fetch("id") }
-    assert_equal %w[77 78], document.fetch("data").map do |item|
+    telegram_ids = document.fetch("data").map do |item|
       item.dig("attributes", "telegram_user_id")
     end
+    assert_equal %w[77 78], telegram_ids
     assert document.fetch("data").all? { |item| item.dig("attributes", "role") == "client" }
   end
 
