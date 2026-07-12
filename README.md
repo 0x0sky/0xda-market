@@ -260,6 +260,21 @@ curl -sS -X POST \
   }'
 ```
 
+The dedicated broker service authenticates Telegram identities through the
+operator API. The operator token selects the trusted `broker` role; callers
+cannot choose or escalate the role in the request body:
+
+```sh
+curl -sS -X POST \
+  http://localhost:9292/operator/v1/auth/telegram \
+  -H 'authorization: Bearer operator-secret' \
+  -H 'content-type: application/json' \
+  -d '{"telegram_user_id":"77","chat_id":"770","username":"example"}'
+```
+
+An existing client is promoted to `broker`; existing brokers and admins are
+never downgraded by later authentication through the client bot.
+
 ## Test
 
 ```sh

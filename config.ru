@@ -77,15 +77,16 @@ kernel = ZeroXDA::Market::Core::Kernel.new(
   id_generator: SecureRandom.method(:uuid)
 )
 
+identity_service = ZeroXDA::Market::Identity::TelegramAuthService.new(
+  store: identity_store,
+  clock: clock,
+  bootstrap_admin_ids: admin_telegram_ids
+)
 public_api = ZeroXDA::Market::Transport::JSONAPI.new(
   kernel: kernel,
   token: public_token,
   readiness: -> { store.healthy? },
-  identity_service: ZeroXDA::Market::Identity::TelegramAuthService.new(
-    store: identity_store,
-    clock: clock,
-    bootstrap_admin_ids: admin_telegram_ids
-  )
+  identity_service: identity_service
 )
 
 applications = { "/" => public_api }
@@ -93,7 +94,8 @@ applications = { "/" => public_api }
 if manual_provider
   operator_api = ZeroXDA::Market::Transport::ManualAPI.new(
     provider: manual_provider,
-    token: operator_token
+    token: operator_token,
+    identity_service: identity_service
   )
   applications["/operator"] = operator_api
 end
