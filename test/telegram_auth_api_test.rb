@@ -70,6 +70,32 @@ class TelegramAuthAPITest < Minitest::Test
     assert_equal "chat_id", JSON.parse(response.body).dig("errors", 0, "details", "field")
   end
 
+  def test_lists_active_users_with_telegram_id_uuid_and_role
+    first = post_auth(telegram_user_id: 77, chat_id: 77)
+    second = post_auth(telegram_user_id: 78, chat_id: 78)
+
+    response = @client.get(
+      "/v1/users?status=active",
+      "HTTP_AUTHORIZATION" => "Bearer client-secret"
+    )
+
+    assert_equal 200, response.status
+    document = JSON.parse(response.body)
+    assert_equal 2, document.dig("meta", "count")
+    assert_equal [first, second].map { |item| JSON.parse(item.body).dig("data", "id") },
+                 document.fetch("data").map { |item| item.fetch("id") }
+    assert_equal %w[77 78], document.fetch("data").map do |item|
+      item.dig("attributes", "telegram_user_id")
+    end
+    assert document.fetch("data").all? { |item| item.dig("attributes", "role") == "client" }
+  end
+
+  def test_active_users_requires_the_bearer_token
+    response = @client.get("/v1/users?status=active")
+
+    assert_equal 401, response.status
+  end
+
   private
 
   def post_auth(body)
