@@ -31,6 +31,21 @@ module ZeroXDA
           row && deserialize_identity(row)
         end
 
+        def list_users(status:)
+          @users.where(status: status).order(:created_at).all.filter_map do |row|
+            identity_row = @identities.where(
+              user_id: row.fetch(:id),
+              provider: "telegram"
+            ).first
+            next unless identity_row
+
+            UserIdentity.new(
+              user: deserialize_user(row),
+              identity: deserialize_identity(identity_row)
+            )
+          end
+        end
+
         def insert_user(user)
           @users.insert(serialize_user(user))
           user
