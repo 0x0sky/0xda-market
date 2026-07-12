@@ -66,6 +66,21 @@ curl -sS 'http://localhost:9292/v1/users?status=active' \
 Each item contains only the internal UUID, Telegram user ID, role and account
 status. `/health` also returns the current UTC server time.
 
+The initial administrator is bootstrapped with `ADMIN_TELEGRAM_IDS`, a
+comma-separated list of numeric Telegram IDs. An authenticated admin can then
+promote another registered Telegram user by ID or current username:
+
+```sh
+curl -sS http://localhost:9292/v1/admin/users/set-admin \
+  -H 'authorization: Bearer client-secret' \
+  -H 'content-type: application/json' \
+  -d '{"actor_telegram_user_id":"77","target":"@example"}'
+```
+
+The target must have authenticated through `/start`. Role assignment is
+transactional and idempotent; the endpoint returns `403` unless the actor has
+the persisted `admin` role.
+
 ## Lifecycle
 
 ```text
