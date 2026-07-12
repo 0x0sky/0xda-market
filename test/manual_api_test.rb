@@ -4,6 +4,8 @@ require_relative "test_helper"
 require "rack/mock"
 require "zero_x_da/market/providers/manual_provider"
 require "zero_x_da/market/transport/manual_api"
+require "zero_x_da/market/identity/memory_store"
+require "zero_x_da/market/identity/telegram_auth_service"
 
 class ManualAPITest < Minitest::Test
   include KernelFixture
@@ -22,7 +24,12 @@ class ManualAPITest < Minitest::Test
     @client = Rack::MockRequest.new(
       ZeroXDA::Market::Transport::ManualAPI.new(
         provider: @provider,
-        token: "operator-secret"
+        token: "operator-secret",
+        identity_service: ZeroXDA::Market::Identity::TelegramAuthService.new(
+          store: ZeroXDA::Market::Identity::MemoryStore.new,
+          clock: @clock,
+          id_generator: SequenceIDs.new
+        )
       )
     )
   end
@@ -89,6 +96,20 @@ class ManualAPITest < Minitest::Test
     attributes = JSON.parse(response.body).dig("data", "attributes")
     assert_equal "claimed", attributes.fetch("status")
     assert_equal "broker-1", attributes.fetch("claimed_by")
+  end
+
+  def test_authenticates_a_telegram_broker
+    response = authorized_post(
+      "/v1/auth/telegram",
+      telegram_user_id: 77,
+      chat_id: 770,
+      username: "zero"
+    )
+
+    assert_equal 201, response.status
+    resource = JSON.parse(response.body).fetch("data")
+    assert_equal "broker", resource.dig("attributes", "role")
+    assert_equal "77", resource.dig("attributes", "identity", "provider_user_id")
   end
 
   private

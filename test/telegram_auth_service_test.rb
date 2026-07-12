@@ -58,6 +58,56 @@ class TelegramAuthServiceTest < Minitest::Test
     refute_equal first.user.id, second.user.id
   end
 
+  def test_trusted_broker_authentication_creates_a_broker
+    authentication = @service.authenticate(
+      provider_user_id: 77,
+      provider_data: { chat_id: "77" },
+      role: "broker"
+    )
+
+    assert_equal "broker", authentication.user.role
+  end
+
+  def test_trusted_broker_authentication_promotes_an_existing_client
+    @service.authenticate(provider_user_id: 77, provider_data: { chat_id: "77" })
+
+    authentication = @service.authenticate(
+      provider_user_id: 77,
+      provider_data: { chat_id: "77" },
+      role: "broker"
+    )
+
+    assert_equal "broker", authentication.user.role
+    assert_equal 1, authentication.user.version
+  end
+
+  def test_client_authentication_does_not_downgrade_a_broker
+    @service.authenticate(
+      provider_user_id: 77,
+      provider_data: { chat_id: "77" },
+      role: "broker"
+    )
+
+    authentication = @service.authenticate(
+      provider_user_id: 77,
+      provider_data: { chat_id: "77" }
+    )
+
+    assert_equal "broker", authentication.user.role
+  end
+
+  def test_authentication_cannot_assign_admin_role
+    error = assert_raises(ArgumentError) do
+      @service.authenticate(
+        provider_user_id: 77,
+        provider_data: { chat_id: "77" },
+        role: "admin"
+      )
+    end
+
+    assert_includes error.message, "role is invalid"
+  end
+
   def test_rejects_an_invalid_telegram_user_id
     error = assert_raises(ArgumentError) do
       @service.authenticate(provider_user_id: "not-a-number", provider_data: {})

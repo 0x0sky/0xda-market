@@ -11,6 +11,8 @@ module ZeroXDA
       class TelegramAuthService
         PROVIDER = "telegram"
         TELEGRAM_ID_PATTERN = /\A[1-9][0-9]*\z/
+        AUTHENTICATABLE_ROLES = %w[client broker].freeze
+        ROLE_RANK = { "client" => 0, "broker" => 1, "admin" => 2 }.freeze
 
         def initialize(
           store:,
@@ -26,13 +28,14 @@ module ZeroXDA
           end.to_set.freeze
         end
 
-        def authenticate(provider_user_id:, provider_data: {})
+        def authenticate(provider_user_id:, provider_data: {}, role: "client")
           provider_user_id = normalize_telegram_id(provider_user_id)
           provider_data = Core::RecordSupport.document(provider_data, field: "provider data")
+          role = normalize_role(role)
           attempts = 0
 
           begin
-            authenticate_once(provider_user_id, provider_data)
+            authenticate_once(provider_user_id, provider_data, role)
           rescue Core::Conflict => error
             raise unless error.code == "duplicate_identity" && attempts.zero?
 
@@ -77,7 +80,7 @@ module ZeroXDA
 
         private
 
-        def authenticate_once(provider_user_id, provider_data)
+        def authenticate_once(provider_user_id, provider_data, role)
           @store.transaction do |store|
             identity = store.find_identity(
               provider: PROVIDER,
@@ -85,14 +88,14 @@ module ZeroXDA
             )
 
             if identity
-              authenticate_existing(store, identity, provider_data)
+              authenticate_existing(store, identity, provider_data, role)
             else
-              create_user_and_identity(store, provider_user_id, provider_data)
+              create_user_and_identity(store, provider_user_id, provider_data, role)
             end
           end
         end
 
-        def authenticate_existing(store, identity, provider_data)
+        def authenticate_existing(store, identity, provider_data, role)
           user = store.find_user(identity.user_id) || raise(Core::NotFound.new("user", identity.user_id))
           if user.status == "blocked"
             raise Core::Conflict.new(
@@ -103,6 +106,7 @@ module ZeroXDA
           end
 
           user = promote_bootstrap_admin(store, user, identity.provider_user_id)
+          user = assign_role(store, user, role)
 
           now = current_time
           replacement = ExternalIdentity.new(
@@ -120,11 +124,11 @@ module ZeroXDA
           Authentication.new(user: user, identity: replacement, created: false)
         end
 
-        def create_user_and_identity(store, provider_user_id, provider_data)
+        def create_user_and_identity(store, provider_user_id, provider_data, role)
           now = current_time
           user = User.new(
             id: new_id,
-            role: bootstrap_admin?(provider_user_id) ? "admin" : "client",
+            role: bootstrap_admin?(provider_user_id) ? "admin" : role,
             status: "active",
             created_at: now
           )
@@ -183,15 +187,34 @@ module ZeroXDA
         end
 
         def promote_user(store, user)
+          replace_role(store, user, "admin")
+        end
+
+        def assign_role(store, user, role)
+          return user if ROLE_RANK.fetch(user.role) >= ROLE_RANK.fetch(role)
+
+          replace_role(store, user, role)
+        end
+
+        def replace_role(store, user, role)
           replacement = User.new(
             id: user.id,
-            role: "admin",
+            role: role,
             status: user.status,
             created_at: user.created_at,
             updated_at: current_time,
             version: user.version + 1
           )
           store.replace_user(replacement, expected_version: user.version)
+        end
+
+        def normalize_role(value)
+          role = value.to_s
+          unless AUTHENTICATABLE_ROLES.include?(role)
+            raise ArgumentError, "authentication role is invalid"
+          end
+
+          role.freeze
         end
 
         def bootstrap_admin?(provider_user_id)
