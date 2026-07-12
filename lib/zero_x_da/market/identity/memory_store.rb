@@ -43,6 +43,20 @@ module ZeroXDA
           end
         end
 
+        def list_users(status:)
+          @monitor.synchronize do
+            @users.values
+                  .select { |user| user.status == status }
+                  .sort_by(&:created_at)
+                  .filter_map do |user|
+              identity = @identities.values.find do |item|
+                item.user_id == user.id && item.provider == "telegram"
+              end
+              UserIdentity.new(user: user, identity: identity) if identity
+            end
+          end
+        end
+
         def insert_user(user)
           @monitor.synchronize do
             raise duplicate("user", user.id) if @users.key?(user.id)
