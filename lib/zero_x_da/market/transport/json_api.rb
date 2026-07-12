@@ -41,6 +41,8 @@ module ZeroXDA
           )
         rescue Core::NotFound => error
           core_error_response(404, error)
+        rescue Core::Forbidden => error
+          core_error_response(403, error)
         rescue Core::UnknownCapability, ArgumentError => error
           if error.is_a?(Core::Error)
             core_error_response(422, error)
@@ -103,6 +105,15 @@ module ZeroXDA
                 "meta" => { "count" => users.length }
               }
             )
+          end
+
+          if method == "POST" && path == "/v1/admin/users/set-admin" && @identity_service
+            body = request_document(request)
+            assignment = @identity_service.set_admin(
+              actor_provider_user_id: body.fetch("actor_telegram_user_id"),
+              target: body.fetch("target")
+            )
+            return resource_response(200, present_role_assignment(assignment))
           end
 
           if method == "POST" && path == "/v1/intents"
@@ -219,6 +230,23 @@ module ZeroXDA
               "telegram_user_id" => entry.identity.provider_user_id,
               "role" => entry.user.role,
               "status" => entry.user.status
+            }
+          }
+        end
+
+        def present_role_assignment(assignment)
+          {
+            "type" => "user",
+            "id" => assignment.user.id,
+            "attributes" => {
+              "telegram_user_id" => assignment.identity.provider_user_id,
+              "telegram_chat_id" => assignment.identity.provider_data["chat_id"],
+              "role" => assignment.user.role,
+              "status" => assignment.user.status
+            },
+            "meta" => {
+              "changed" => assignment.changed,
+              "assigned_by" => assignment.actor.id
             }
           }
         end
