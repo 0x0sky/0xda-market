@@ -113,6 +113,26 @@ class PostgresPersistenceTest < Minitest::Test
     assert_equal "770", second.identity.provider_data.fetch("chat_id")
   end
 
+  def test_telegram_auth_recovers_from_a_stale_pooled_connection
+    clock = MutableClock.new
+    identifiers = [
+      "00000000-0000-4000-8000-000000000021",
+      "00000000-0000-4000-8000-000000000022"
+    ].each
+    service = build_identity_service(@database, clock, -> { identifiers.next })
+
+    @database.connection.synchronize(&:finish)
+
+    authentication = service.authenticate(
+      provider_user_id: 77,
+      provider_data: { chat_id: "77", username: "zero" }
+    )
+
+    assert authentication.created
+    assert_equal "77", authentication.identity.provider_user_id
+    assert @database.healthy?
+  end
+
   def test_admin_role_assignment_survives_reconnection
     clock = MutableClock.new
     identifiers = [
