@@ -78,6 +78,29 @@ module ZeroXDA
           end
         end
 
+        # Resolves the telegram identity and raises unless the user is an
+        # active admin. Shared guard for admin-only transport routes.
+        def require_admin(provider_user_id:)
+          provider_user_id = normalize_telegram_id(provider_user_id)
+
+          @store.transaction do |store|
+            identity = store.find_identity(
+              provider: PROVIDER,
+              provider_user_id: provider_user_id
+            ) || raise(Core::NotFound.new("telegram_identity", provider_user_id))
+            user = fetch_active_user(store, identity.user_id)
+            user = promote_bootstrap_admin(store, user, provider_user_id)
+            unless user.role == "admin"
+              raise Core::Forbidden.new(
+                "admin role is required",
+                details: { user_id: user.id }
+              )
+            end
+
+            user
+          end
+        end
+
         private
 
         def authenticate_once(provider_user_id, provider_data, role)
