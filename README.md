@@ -329,36 +329,37 @@ so concurrent deploy starts cannot apply the same migration twice.
 
 ## Render
 
-`render.yaml` defines a free Frankfurt web service built from the repository's
-Dockerfile. It configures `/health`, prompts for the API and database secrets,
-and deploys only after all GitHub CI checks pass.
+`render.yaml` uses Render's project model for the two core web services:
 
-1. Merge the deployment PR into `master`.
-2. In Render, create a new Blueprint and select this repository.
-3. Enter distinct values for `PUBLIC_API_TOKEN` and `MANUAL_PROVIDER_TOKEN`.
-4. Enter the Supabase Session Pooler URI as `DATABASE_URL`, replacing
-   `[YOUR-PASSWORD]` and appending `?sslmode=require`.
-5. Apply the Blueprint and wait for the health check to pass.
+| Render environment | service | branch | URL |
+| --- | --- | --- | --- |
+| `Test` | `0xda-market-test` | `master` | `https://zeroxda-market-test.onrender.com` |
+| `Prod` | `0xda-market` | `release` | `https://zeroxda-market.onrender.com` |
 
-Keep `TELEGRAM_CLIENT_BOT_TOKEN`, `TELEGRAM_BROKER_BOT_TOKEN` and
-`TELEGRAM_WEBHOOK_BASE_URL` in their dedicated bot services, not in the core
-Render service.
+Both services are built from the repository Dockerfile, use `/health` for
+health checks and deploy only after GitHub CI checks pass. Runtime secrets stay
+in Render and are marked with `sync: false` in the Blueprint:
 
-Render rebuilds and deploys subsequent `master` commits after CI succeeds.
+- `PUBLIC_API_TOKEN`
+- `MANUAL_PROVIDER_TOKEN`
+- `DATABASE_URL`
+- `ADMIN_TELEGRAM_IDS`
 
-The test deployment workflow also keeps both dedicated Telegram bot services
-attached to the test stack. After a successful `master` CI run it:
+Use distinct token and database values for production and test. Enter Supabase
+Session Pooler URIs as `DATABASE_URL` and append `?sslmode=require`.
 
-1. deploys `0xda-market-test` and runs the protected API smoke tests;
-2. reads that service's public and operator tokens through the Render API;
-3. sets both bot services' `MARKET_API_URL` to
-   `https://zeroxda-market-test.onrender.com` and synchronizes the matching
-   token;
-4. redeploys the bot services and verifies their Telegram webhooks.
+Keep Telegram bot tokens and webhook secrets in the dedicated bot services, not
+in the core Render services. The client bot services call the public API and
+select their database indirectly through `MARKET_API_URL`:
 
-The bots never connect to PostgreSQL directly. Their database environment is
-selected by the core API: the test core uses the Supabase test `DATABASE_URL`,
-so all bot requests are isolated from production data.
+- production bot -> `https://zeroxda-market.onrender.com`
+- test bot -> `https://zeroxda-market-test.onrender.com`
+
+The optional `Provision Render test service` GitHub workflow creates or updates
+only the test core service and places it in the Render `Test` environment.
+Bot service environment variables are managed separately in Render or by the
+client bot repository Blueprint.
+
 The `market` schema is private to the backend connection; no domain tables are
 created in Supabase's API-exposed `public` schema.
 
