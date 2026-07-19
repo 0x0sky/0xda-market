@@ -21,7 +21,6 @@ class PostgresPersistenceTest < Minitest::Test
     migrate(@database)
     @database.connection.run(<<~SQL)
       TRUNCATE market.user_identities,
-               market.users,
                market.telegram_updates,
                market.telegram_brokers,
                market.telegram_demo_orders,
@@ -30,6 +29,7 @@ class PostgresPersistenceTest < Minitest::Test
                market.quotes,
                market.intents CASCADE
     SQL
+    @database.connection.run("DELETE FROM market.users")
   end
 
   def teardown
@@ -82,7 +82,11 @@ class PostgresPersistenceTest < Minitest::Test
       Sequel.qualify(:market, :schema_migrations)
     ].select_map(:version)
     assert_equal(
-      %w[001_initial 002_telegram_demo 003_users_and_identities 004_products 005_pricing],
+      %w[
+        001_initial 002_telegram_demo 003_users_and_identities
+        004_products 005_pricing 006_replace_premium_9m_with_12m
+        007_product_catalog_localizations 008_legacy_catalog_rollback_window
+      ],
       versions
     )
   end
@@ -91,19 +95,75 @@ class PostgresPersistenceTest < Minitest::Test
     store = ZeroXDA::Market::Catalog::PostgresStore.new(database: @database)
 
     assert_equal 9, store.list_products(status: "active").length
-    premium = store.find_product("premium_9m")
-    assert_equal "Telegram Premium 9 міс.", premium.name
-    assert_equal 9, premium.metadata.fetch("duration_months")
+    premium = store.find_product("premium_12m")
+    assert_equal "Telegram Premium 12 months", premium.name
+    assert_equal "Premium 12m", premium.short_name
+    assert_equal "en_US", premium.locale
+    assert_equal 12, premium.metadata.fetch("duration_months")
+    assert_nil store.find_product("premium_9m")
+
+    ukrainian = store.find_product("premium_12m", locale: "uk_UA")
+    assert_equal "Telegram Premium 12 міс.", ukrainian.name
+    assert_equal "Premium 12 міс.", ukrainian.button_label
+    assert_equal "uk_UA", ukrainian.locale
+
+    legacy = @database.connection[Sequel.qualify(:market, :products)]
+      .where(sku: "premium_12m")
+      .select(:name, :button_label)
+      .first
+    assert_equal "Telegram Premium 12 міс.", legacy.fetch(:name)
+    assert_equal "Premium 12 міс.", legacy.fetch(:button_label)
 
     @database.disconnect
     @database = connect
     restarted = ZeroXDA::Market::Catalog::PostgresStore.new(database: @database)
 
     assert_equal %w[
-      premium_3m premium_6m premium_9m
+      premium_3m premium_6m premium_12m
       stars_500 stars_1000 stars_3000
       ton btc eth
     ], restarted.list_products(status: "active").map(&:sku)
+  end
+
+  def test_product_price_snapshot_tracks_internal_editor_and_history
+    user_id = "00000000-0000-4000-8000-000000000071"
+    @database.connection[Sequel.qualify(:market, :users)].insert(
+      id: user_id,
+      role: "admin",
+      status: "active"
+    )
+    price_id = @database.connection[
+      Sequel.qualify(:market, :product_prices)
+    ].insert(
+      sku: "premium_3m",
+      amount_usdt: 12.5,
+      source: "admin",
+      set_by_user_id: user_id,
+      created_at: Time.utc(2026, 7, 19, 12, 0, 0)
+    )
+
+    product = @database.connection[
+      Sequel.qualify(:market, :products)
+    ].where(sku: "premium_3m").first
+    assert_equal price_id, product.fetch(:current_price_id)
+    assert_equal BigDecimal("12.5"), BigDecimal(product.fetch(:current_price_usdt).to_s)
+    assert_equal user_id, product.fetch(:price_updated_by_user_id).to_s
+    assert_equal user_id, product.fetch(:updated_by_user_id).to_s
+  ensure
+    if @database
+      @database.connection[Sequel.qualify(:market, :product_prices)]
+               .where(sku: "premium_3m")
+               .delete
+      @database.connection[Sequel.qualify(:market, :products)]
+               .where(sku: "premium_3m")
+               .update(
+                 current_price_id: nil,
+                 current_price_usdt: nil,
+                 price_updated_at: nil,
+                 price_updated_by_user_id: nil,
+                 updated_by_user_id: nil
+               )
+    end
   end
 
   def test_telegram_identity_survives_reconnection
