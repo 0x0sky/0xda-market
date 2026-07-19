@@ -7,6 +7,9 @@ on:
         description: Semantic version tag matching VERSION (for example v0.1.0)
         required: true
         type: string
+  push:
+    branches:
+      - "release-request/v*"
 
 permissions:
   contents: write
@@ -44,38 +47,57 @@ jobs:
       - name: Validate release metadata
         id: release
         env:
-          RELEASE_TAG: ${{ inputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_TAG: ${{ inputs.tag }}
+          TRIGGER_REF: ${{ github.ref_name }}
+          TRIGGER_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
 
+          if [[ "${EVENT_NAME}" == "push" ]]; then
+            prefix="release-request/"
+            if [[ "${TRIGGER_REF}" != "${prefix}"v* ]]; then
+              echo "unexpected release request branch: ${TRIGGER_REF}" >&2
+              exit 1
+            fi
+            release_tag="${TRIGGER_REF#${prefix}}"
+          else
+            release_tag="${MANUAL_TAG}"
+          fi
+
           version="$(tr -d '[:space:]' < VERSION)"
           expected_tag="v${version}"
-          if [[ ! "${RELEASE_TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+          if [[ ! "${release_tag}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "tag must be a stable SemVer tag such as v0.1.0" >&2
             exit 1
           fi
-          if [[ "${RELEASE_TAG}" != "${expected_tag}" ]]; then
-            echo "tag ${RELEASE_TAG} does not match VERSION (${expected_tag})" >&2
+          if [[ "${release_tag}" != "${expected_tag}" ]]; then
+            echo "tag ${release_tag} does not match VERSION (${expected_tag})" >&2
             exit 1
           fi
 
-          notes_file="docs/releases/${RELEASE_TAG}.md"
+          notes_file="docs/releases/${release_tag}.md"
           test -f "${notes_file}"
           grep -Fq "## [${version}]" CHANGELOG.md
 
           git fetch origin --tags --force
           release_commit="$(git rev-parse HEAD)"
+          if [[ "${EVENT_NAME}" == "push" && "${TRIGGER_SHA}" != "${release_commit}" ]]; then
+            echo "release request must point to release HEAD ${release_commit}" >&2
+            exit 1
+          fi
+
           tag_exists=false
-          if git rev-parse --verify --quiet "refs/tags/${RELEASE_TAG}^{commit}" >/dev/null; then
-            tagged_commit="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
+          if git rev-parse --verify --quiet "refs/tags/${release_tag}^{commit}" >/dev/null; then
+            tagged_commit="$(git rev-parse "refs/tags/${release_tag}^{commit}")"
             if [[ "${tagged_commit}" != "${release_commit}" ]]; then
-              echo "${RELEASE_TAG} already points to ${tagged_commit}, not release HEAD ${release_commit}" >&2
+              echo "${release_tag} already points to ${tagged_commit}, not release HEAD ${release_commit}" >&2
               exit 1
             fi
             tag_exists=true
           fi
 
-          echo "tag=${RELEASE_TAG}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${release_tag}" >> "${GITHUB_OUTPUT}"
           echo "notes_file=${notes_file}" >> "${GITHUB_OUTPUT}"
           echo "tag_exists=${tag_exists}" >> "${GITHUB_OUTPUT}"
 

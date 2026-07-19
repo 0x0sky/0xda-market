@@ -13,9 +13,11 @@ for example, release `0.1.0` is tagged `v0.1.0` rather than `release_0.1`.
    release-branch CI, the Render production deployment and `/health`.
 4. Promote the matching bot version from its `master` to `release`, then verify
    `/start`, `/buy`, `/apply_prices` and one controlled price update.
-5. Run **Prepare GitHub release** with `vX.Y.Z` in this repository and then in
-   the bot repository. Each workflow retests the exact `release` HEAD, builds
-   its image, creates an annotated tag and saves a draft GitHub Release.
+5. Run **Prepare GitHub release** with `vX.Y.Z`, or create
+   `release-request/vX.Y.Z` from the exact `release` HEAD, in this repository
+   and then in the bot repository. Each workflow verifies the production
+   commit, retests it, builds its image, creates an annotated tag and saves a
+   draft GitHub Release.
 6. Review both drafts and publish the core release before the bot release.
 
 Tags are immutable release coordinates: never move or reuse a published tag.
