@@ -13,7 +13,6 @@ projects:
             dockerContext: .
             healthCheckPath: /health
             autoDeployTrigger: checksPass
-            maxShutdownDelaySeconds: 30
             envVars:
               - key: RACK_ENV
                 value: production
@@ -37,7 +36,6 @@ projects:
             dockerContext: .
             healthCheckPath: /health
             autoDeployTrigger: checksPass
-            maxShutdownDelaySeconds: 30
             envVars:
               - key: RACK_ENV
                 value: production
