@@ -17,9 +17,11 @@ module ZeroXDA
           ]
         end
 
-        def list_products(status:, locale: DEFAULT_LOCALE)
+        def list_products(status:, locale: DEFAULT_LOCALE, marketable: nil)
           locale = normalize_locale(locale)
-          rows = @products.where(status: status).order(:position, :sku).all
+          scope = @products.where(status: status)
+          scope = scope.where(marketable: marketable) unless marketable.nil?
+          rows = scope.order(:position, :sku).all
           translations = translations_for(rows.map { |row| row.fetch(:sku) }, locale)
           rows.map do |row|
             deserialize(row, locale: locale, translation: translations.fetch(row.fetch(:sku)))
@@ -62,6 +64,7 @@ module ZeroXDA
             metadata: document(row.fetch(:metadata)),
             status: row.fetch(:status),
             position: row.fetch(:position),
+            marketable: row.fetch(:marketable, true),
             current_price_usdt: row.fetch(:current_price_usdt),
             price_updated_at: row.fetch(:price_updated_at),
             price_updated_by_user_id: row.fetch(:price_updated_by_user_id),
