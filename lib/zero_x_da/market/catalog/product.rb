@@ -10,6 +10,7 @@ module ZeroXDA
         SKU_PATTERN = /\A[a-z0-9][a-z0-9_-]{0,59}\z/
         LOCALE_PATTERN = /\A[a-z]{2}_[A-Z]{2}\z/
         STATUSES = %w[active inactive].freeze
+        CURRENCY_FAMILY = "currency"
 
         attr_reader :sku,
                     :short_name,
@@ -36,6 +37,7 @@ module ZeroXDA
           metadata: {},
           status: "active",
           position:,
+          marketable: true,
           current_price_usdt: nil,
           price_updated_at: nil,
           price_updated_by_user_id: nil,
@@ -56,6 +58,7 @@ module ZeroXDA
           @metadata = Core::RecordSupport.document(metadata, field: "metadata")
           @status = status.dup.freeze
           @position = Core::RecordSupport.non_negative_integer(position, field: "position")
+          @marketable = marketable ? true : false
           @current_price_usdt = optional_decimal(current_price_usdt)
           @price_updated_at = optional_time(price_updated_at, field: "price_updated_at")
           @price_updated_by_user_id = optional_identifier(
@@ -67,6 +70,20 @@ module ZeroXDA
           @updated_at = Core::RecordSupport.time(updated_at, field: "updated_at")
           @version = Core::RecordSupport.non_negative_integer(version, field: "version")
           freeze
+        end
+
+        def marketable?
+          @marketable
+        end
+
+        # Currencies live in the same catalog as sellable products; the family
+        # marker plus marketable: false distinguishes them.
+        def currency?
+          @metadata["family"] == CURRENCY_FAMILY
+        end
+
+        def currency_code
+          @metadata["code"]
         end
 
         private

@@ -3,26 +3,47 @@
 require "minitest/autorun"
 require "bigdecimal"
 require "time"
-require_relative "../lib/zero_x_da/market/localization/memory_store"
+require_relative "../lib/zero_x_da/market/catalog/memory_store"
+require_relative "../lib/zero_x_da/market/catalog/service"
 require_relative "../lib/zero_x_da/market/localization/service"
 
 module ZeroXDA
   module Market
     module Localization
       class ServiceTest < Minitest::Test
+        NOW = Time.utc(2026, 7, 15, 8, 0, 0)
+
         def setup
-          @now = Time.utc(2026, 7, 15, 8, 0, 0)
-          @service = Service.new(fx_store: MemoryStore.new(clock: -> { @now }))
+          store = Catalog::MemoryStore.new(
+            products: [
+              product("premium_3m", position: 1),
+              currency("usdt", "USDT", price: "1", position: 100),
+              currency(
+                "uah",
+                "UAH",
+                price: "41.5",
+                position: 102,
+                locales: %w[uk_UA uk_RU]
+              ),
+              currency("usd", "USD", price: nil, position: 101, locales: %w[en_US])
+            ]
+          )
+          catalog = Catalog::Service.new(store: store)
+          @catalog = catalog
+          @service = Service.new(catalog: catalog)
         end
 
-        def test_locale_for_maps_known_languages
+        def test_locale_for_maps_known_languages_and_falls_back
           assert_equal "en_US", @service.locale_for("en")
           assert_equal "uk_UA", @service.locale_for("uk-UA")
-        end
-
-        def test_locale_for_falls_back_to_default
           assert_equal Service::DEFAULT_LOCALE, @service.locale_for("fr")
           assert_equal Service::DEFAULT_LOCALE, @service.locale_for(nil)
+        end
+
+        def test_catalog_excludes_currencies_from_the_sellable_list
+          assert_equal %w[premium_3m], @catalog.products.map(&:sku)
+          assert_equal %w[usdt usd uah], @catalog.currencies.map(&:sku)
+          assert @catalog.currencies.all?(&:currency?)
         end
 
         def test_convert_returns_base_amount_unchanged
@@ -30,30 +51,70 @@ module ZeroXDA
           assert_equal BigDecimal("12.5"), amount
         end
 
-        def test_convert_uses_buy_side_rate
-          @service.set_rate(currency: "EUR", usdt_per_unit: "1.16", updated_at: @now)
-          amount = @service.convert(amount_usdt: "11.60", currency: "EUR")
-          assert_equal BigDecimal("10"), amount
+        def test_convert_uses_the_currency_product_price_as_the_rate
+          amount = @service.convert(amount_usdt: "83.0", currency: "UAH")
+          assert_equal BigDecimal("2"), amount
         end
 
-        def test_convert_rejects_unsupported_currency
+        def test_a_currency_without_an_applied_price_is_not_supported
+          refute @service.supported_currency?("USD")
+          assert_raises(ArgumentError) do
+            @service.convert(amount_usdt: "10", currency: "USD")
+          end
+        end
+
+        def test_unknown_currency_is_rejected
           assert_raises(ArgumentError) do
             @service.convert(amount_usdt: "10", currency: "EUR")
           end
+          refute @service.supported_currency?("EUR")
         end
 
-        def test_base_currency_rate_is_fixed
-          assert_raises(ArgumentError) do
-            @service.set_rate(currency: "USDT", usdt_per_unit: "2")
-          end
+        def test_currency_for_resolves_the_locale_default
+          assert_equal "UAH", @service.currency_for("uk_UA")
+          assert_equal "UAH", @service.currency_for("uk_RU")
+          assert_equal "USD", @service.currency_for("en_US")
+          assert_equal Service::BASE_CURRENCY, @service.currency_for("fr_FR")
         end
 
-        def test_set_rate_upserts
-          @service.set_rate(currency: "EUR", usdt_per_unit: "1.10", updated_at: @now)
-          @service.set_rate(currency: "EUR", usdt_per_unit: "1.20", updated_at: @now)
-          currencies = @service.rates.map(&:currency)
-          assert_equal %w[EUR USDT], currencies
-          assert_equal BigDecimal("1.2"), @service.rates.first.usdt_per_unit
+        def test_resolve_defaults_currency_by_locale
+          locale = @service.resolve(language_code: "uk")
+          assert_equal "uk_UA", locale.code
+          assert_equal "UAH", locale.currency
+
+          explicit = @service.resolve(language_code: "uk", currency: "usdt")
+          assert_equal "USDT", explicit.currency
+        end
+
+        private
+
+        def product(sku, position:)
+          Catalog::Product.new(
+            sku: sku,
+            short_name: sku,
+            name: sku,
+            button_label: sku,
+            position: position,
+            created_at: NOW
+          )
+        end
+
+        def currency(sku, code, price:, position:, locales: [])
+          Catalog::Product.new(
+            sku: sku,
+            short_name: code,
+            name: code,
+            button_label: code,
+            position: position,
+            marketable: false,
+            metadata: {
+              "family" => "currency",
+              "code" => code,
+              "locales" => locales
+            },
+            current_price_usdt: price,
+            created_at: NOW
+          )
         end
       end
     end

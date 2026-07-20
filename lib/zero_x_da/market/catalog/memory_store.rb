@@ -12,10 +12,14 @@ module ZeroXDA
           @monitor = Monitor.new
         end
 
-        def list_products(status:, locale: "en_US")
+        # Defaults to the sellable catalog (marketable: true) to match the
+        # legacy "list_products returns what you can sell" behavior. Pass
+        # marketable: false for currencies, or nil for both.
+        def list_products(status:, locale: "en_US", marketable: true)
           @monitor.synchronize do
             @products.values
                      .select { |product| product.status == status }
+                     .select { |product| marketable.nil? || product.marketable? == marketable }
                      .sort_by { |product| [product.position, product.sku] }
           end
         end
