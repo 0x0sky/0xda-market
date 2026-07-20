@@ -86,6 +86,7 @@ class PostgresPersistenceTest < Minitest::Test
         001_initial 002_telegram_demo 003_users_and_identities
         004_products 005_pricing 006_replace_premium_9m_with_12m
         007_product_catalog_localizations 008_legacy_catalog_rollback_window
+        009_currencies_as_products
       ],
       versions
     )
@@ -123,6 +124,20 @@ class PostgresPersistenceTest < Minitest::Test
       stars_500 stars_1000 stars_3000
       ton btc eth
     ], restarted.list_products(status: "active").map(&:sku)
+  end
+
+  def test_currency_products_are_seeded_as_non_marketable
+    store = ZeroXDA::Market::Catalog::PostgresStore.new(database: @database)
+
+    currencies = store.list_products(status: "active", marketable: false)
+    assert_equal %w[usdt usd uah rub], currencies.map(&:sku)
+    refute currencies.any?(&:marketable?)
+    assert currencies.all?(&:currency?)
+
+    usdt = currencies.find { |currency| currency.sku == "usdt" }
+    assert_equal BigDecimal("1"), usdt.current_price_usdt
+
+    assert_equal 13, store.list_products(status: "active", marketable: nil).length
   end
 
   def test_product_price_snapshot_tracks_internal_editor_and_history
