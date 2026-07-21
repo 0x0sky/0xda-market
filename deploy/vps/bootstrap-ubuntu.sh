@@ -36,6 +36,14 @@ apt-get update
 apt-get install --yes docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 systemctl enable --now docker fail2ban ssh
 
+if ! swapon --show=NAME --noheadings | grep -q .; then
+  fallocate -l 2G /swapfile
+  chmod 0600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  echo '/swapfile none swap sw 0 0' >>/etc/fstab
+fi
+
 if ! id deploy >/dev/null 2>&1; then
   adduser --disabled-password --gecos "" deploy
 fi
