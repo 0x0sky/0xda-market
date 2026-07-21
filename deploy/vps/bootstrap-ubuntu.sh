@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Run this script as root" >&2
   exit 1
