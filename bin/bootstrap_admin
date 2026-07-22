@@ -1,0 +1,37 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "bundler/setup"
+require_relative "../lib/zero_x_da/market/adapters/postgres_database"
+require_relative "../lib/zero_x_da/market/identity/postgres_store"
+require_relative "../lib/zero_x_da/market/identity/telegram_auth_service"
+
+telegram_user_id = ARGV.first
+if telegram_user_id.nil? || telegram_user_id.empty?
+  warn "Usage: bundle exec ruby bin/bootstrap_admin TELEGRAM_USER_ID"
+  exit 64
+end
+
+database_url = ENV["DATABASE_URL"]
+if database_url.nil? || database_url.empty?
+  warn "DATABASE_URL is required"
+  exit 78
+end
+
+database = ZeroXDA::Market::Adapters::PostgresDatabase.new(
+  url: database_url,
+  max_connections: 1
+)
+
+begin
+  store = ZeroXDA::Market::Identity::PostgresStore.new(database: database)
+  service = ZeroXDA::Market::Identity::TelegramAuthService.new(store: store)
+  result = service.bootstrap_admin(provider_user_id: telegram_user_id)
+
+  puts "admin bootstrap complete"
+  puts "telegram_user_id=#{result.identity.provider_user_id}"
+  puts "user_id=#{result.user.id}"
+  puts "created=#{result.created}"
+ensure
+  database.disconnect
+end
