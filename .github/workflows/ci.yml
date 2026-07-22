@@ -60,7 +60,21 @@ jobs:
         with:
           ruby-version: "3.3.11"
           bundler-cache: true
-      - run: bundle exec rake
+      - name: Run integration tests
+        id: integration_tests
+        run: |
+          set -o pipefail
+          bundle exec rake >integration-test.log 2>&1 || {
+            cat integration-test.log
+            exit 1
+          }
+      - name: Upload integration failure log
+        if: failure() && steps.integration_tests.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-log
+          path: integration-test.log
+          retention-days: 3
       - name: Validate operational scripts
         run: |
           ruby -c bin/bootstrap_admin
