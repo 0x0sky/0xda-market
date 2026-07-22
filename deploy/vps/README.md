@@ -14,6 +14,22 @@ The application remains unchanged. The deployment layer provides:
 
 Render should remain active until the VPS has passed the public health checks.
 
+## Preparation status
+
+Current state of the VPS migration:
+
+- [x] deployment files and rollback procedure are prepared in this draft PR;
+- [x] repository references use `0xda-market/0xda-market`;
+- [x] the SSH deployment port is fixed at `22022` in documentation and CI;
+- [ ] bootstrap the VPS and verify Docker, Compose, SSH, Fail2ban, UFW and swap;
+- [ ] create `/opt/0xda-market/shared/.env` with production values;
+- [ ] configure the GitHub `production` environment secrets;
+- [ ] run the first health-gated deployment from `release`;
+- [ ] switch DNS only after the API container is healthy;
+- [ ] verify public HTTPS and client bot traffic before retiring Render.
+
+No production deployment or DNS cutover is performed by this PR.
+
 ## 1. VM baseline
 
 Use Ubuntu 24.04 LTS. A Spaceship Standard 1 VM is enough for the API and
@@ -25,7 +41,7 @@ bootstrap after this change is merged:
 
 ```sh
 curl -fsSL \
-  https://raw.githubusercontent.com/0x0sky/0xda-market/master/deploy/vps/bootstrap-ubuntu.sh \
+  https://raw.githubusercontent.com/0xda-market/0xda-market/master/deploy/vps/bootstrap-ubuntu.sh \
   | bash
 ```
 
@@ -65,7 +81,7 @@ explicitly used.
 
 ## 3. GitHub production environment
 
-Create or update the `production` environment in `0x0sky/0xda-market`.
+Create or update the `production` environment in `0xda-market/0xda-market`.
 
 Environment secrets:
 
@@ -76,7 +92,7 @@ Environment secrets:
 
 Environment variables:
 
-- `VPS_PORT`: `22`;
+- `VPS_PORT`: `22022`;
 - `VPS_DEPLOY_PATH`: `/opt/0xda-market`.
 
 A push to `release` first runs the normal CI suite and Docker build. Only a
