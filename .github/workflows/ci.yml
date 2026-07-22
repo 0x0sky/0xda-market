@@ -20,7 +20,21 @@ jobs:
         with:
           ruby-version: "3.3.11"
           bundler-cache: true
-      - run: bundle exec rake
+      - name: Run unit tests
+        id: unit_tests
+        run: |
+          set -o pipefail
+          bundle exec rake >unit-test.log 2>&1 || {
+            cat unit-test.log
+            exit 1
+          }
+      - name: Upload unit failure log
+        if: failure() && steps.unit_tests.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-log
+          path: unit-test.log
+          retention-days: 3
 
   test:
     runs-on: ubuntu-latest
