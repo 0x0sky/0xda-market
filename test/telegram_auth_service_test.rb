@@ -116,20 +116,51 @@ class TelegramAuthServiceTest < Minitest::Test
     assert_includes error.message, "positive integer"
   end
 
-  def test_bootstrap_identity_authenticates_as_admin
-    service = build_service(bootstrap_admin_ids: [77])
-
-    authentication = service.authenticate(
+  def test_explicit_bootstrap_creates_an_admin
+    result = @service.bootstrap_admin(
       provider_user_id: 77,
       provider_data: { chat_id: "77", username: "owner" }
     )
 
+    assert result.created
+    assert_equal "admin", result.user.role
+
+    authentication = @service.authenticate(
+      provider_user_id: 77,
+      provider_data: { chat_id: "77", username: "owner" }
+    )
     assert_equal "admin", authentication.user.role
   end
 
+  def test_explicit_bootstrap_promotes_an_existing_user_without_overwriting_identity
+    original = @service.authenticate(
+      provider_user_id: 77,
+      provider_data: { chat_id: "77", username: "owner" }
+    )
+
+    result = @service.bootstrap_admin(
+      provider_user_id: 77,
+      provider_data: { username: "ignored" }
+    )
+
+    refute result.created
+    assert_equal "admin", result.user.role
+    assert_equal original.identity.provider_data, result.identity.provider_data
+  end
+
+  def test_explicit_bootstrap_is_idempotent
+    first = @service.bootstrap_admin(provider_user_id: 77)
+    second = @service.bootstrap_admin(provider_user_id: 77)
+
+    assert first.created
+    refute second.created
+    assert_equal first.user.id, second.user.id
+    assert_equal "admin", second.user.role
+  end
+
   def test_admin_promotes_a_registered_user_by_username
-    service = build_service(bootstrap_admin_ids: [77])
-    service.authenticate(
+    service = build_service
+    service.bootstrap_admin(
       provider_user_id: 77,
       provider_data: { chat_id: "77", username: "owner" }
     )
@@ -150,8 +181,8 @@ class TelegramAuthServiceTest < Minitest::Test
   end
 
   def test_admin_assignment_by_telegram_id_is_idempotent
-    service = build_service(bootstrap_admin_ids: [77])
-    service.authenticate(provider_user_id: 77, provider_data: { chat_id: "77" })
+    service = build_service
+    service.bootstrap_admin(provider_user_id: 77)
     service.authenticate(provider_user_id: 78, provider_data: { chat_id: "78" })
 
     first = service.set_admin(actor_provider_user_id: 77, target: "78")
@@ -175,12 +206,11 @@ class TelegramAuthServiceTest < Minitest::Test
 
   private
 
-  def build_service(bootstrap_admin_ids: [])
+  def build_service
     ZeroXDA::Market::Identity::TelegramAuthService.new(
       store: ZeroXDA::Market::Identity::MemoryStore.new,
       clock: @clock,
-      id_generator: SequenceIDs.new,
-      bootstrap_admin_ids: bootstrap_admin_ids
+      id_generator: SequenceIDs.new
     )
   end
 end
