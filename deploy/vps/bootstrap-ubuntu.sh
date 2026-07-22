@@ -68,19 +68,22 @@ chown deploy:deploy /home/deploy/.ssh/authorized_keys
 chmod 0600 /home/deploy/.ssh/authorized_keys
 
 # Preserve every configured SSH port, and especially the port used by the
-# current session, before enabling UFW. This prevents remote lockout on VPS
-# images that expose SSH on a non-standard port such as 22022.
+# current session, before enabling UFW. The deployment workflow connects to
+# port 22022, so keep that firewall rule open even if sshd is not listening on
+# it yet.
+required_deploy_port=22022
 mapfile -t ssh_ports < <(
   {
     if [[ -n "${SSH_CONNECTION:-}" ]]; then
       awk '{print $4}' <<<"${SSH_CONNECTION}"
     fi
     sshd -T 2>/dev/null | awk '$1 == "port" { print $2 }'
+    printf '%s\n' "$required_deploy_port"
   } | awk '/^[0-9]+$/' | sort -nu
 )
 
 if [[ "${#ssh_ports[@]}" -eq 0 ]]; then
-  ssh_ports=(22)
+  ssh_ports=("$required_deploy_port")
 fi
 
 for ssh_port in "${ssh_ports[@]}"; do
@@ -91,7 +94,13 @@ ufw allow 443/tcp
 ufw allow 443/udp
 ufw --force enable
 
-primary_ssh_port="${ssh_ports[0]}"
+if ! sshd -T 2>/dev/null | awk '$1 == "port" { print $2 }' | grep -qx "$required_deploy_port"; then
+  cat >&2 <<EOF
+WARNING: UFW allows TCP ${required_deploy_port}, but sshd does not currently
+listen on that port. Configure and test SSH on ${required_deploy_port} before
+running the release workflow.
+EOF
+fi
 
 cat <<EOF
 
@@ -106,8 +115,10 @@ Copy its full contents into the production environment secret:
 Repository production settings:
   secret VPS_HOST=<public VPS IP>
   secret VPS_USER=deploy
-  variable VPS_PORT=${primary_ssh_port}
   variable VPS_DEPLOY_PATH=/opt/0xda-market
+
+The deployment workflow uses the fixed SSH port:
+  22022
 
 Before the first release deployment, create:
   /opt/0xda-market/shared/.env
