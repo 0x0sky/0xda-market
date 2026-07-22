@@ -36,8 +36,9 @@ jobs:
           ruby-version: "3.3.11"
           bundler-cache: true
       - run: bundle exec rake
-      - name: Validate VPS scripts
+      - name: Validate operational scripts
         run: |
+          ruby -c bin/bootstrap_admin
           bash -n deploy/vps/bootstrap-ubuntu.sh
           bash -n deploy/vps/deploy.sh
           bash -n deploy/vps/switch-environment.sh
