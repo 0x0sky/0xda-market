@@ -39,29 +39,6 @@ module ZeroXDA
           end
         end
 
-        # Creates or promotes the first administrator explicitly. This method is
-        # intended for the one-shot bin/bootstrap_admin command, not request-time
-        # authentication. Administrator authority remains persisted in the store.
-        def bootstrap_admin(provider_user_id:, provider_data: {})
-          provider_user_id = normalize_telegram_id(provider_user_id)
-          provider_data = Core::RecordSupport.document(provider_data, field: "provider data")
-
-          @store.transaction do |store|
-            identity = store.find_identity(
-              provider: PROVIDER,
-              provider_user_id: provider_user_id
-            )
-
-            if identity
-              user = fetch_active_user(store, identity.user_id)
-              user = promote_user(store, user) unless user.role == "admin"
-              Authentication.new(user: user, identity: identity, created: false)
-            else
-              create_user_and_identity(store, provider_user_id, provider_data, "admin")
-            end
-          end
-        end
-
         def active_users
           @store.list_users(status: "active")
         end
