@@ -254,6 +254,22 @@ curl -sS -X POST http://localhost:9292/operator/v1/tasks/TASK_ID/complete \
   -d '{"reference":"external-result-1","data":{"delivered":true}}'
 ```
 
+## Project operating contract
+
+This repository is the canonical project hub for a solo, mobile-first workflow.
+Repository and database work should be completed through the available GitHub and
+Supabase connectors instead of delegating connector-capable steps to the owner.
+
+The default delivery path is feature branch → draft pull request → green `test`
+check → owner review → merge. The core must remain provider-agnostic, database
+changes must be verified against the test Supabase project first, and merge,
+deployment or irreversible production actions require explicit owner review.
+
+The complete machine-readable contract, including canonical repositories,
+Supabase project references, migration rules, domain invariants and deployment
+fallbacks, is stored in
+[`PROJECT_INSTRUCTIONS.yaml`](PROJECT_INSTRUCTIONS.yaml).
+
 ## Tests
 
 ```sh
@@ -279,7 +295,8 @@ VPS deployment is active-passive:
 - staging never registers a Telegram webhook.
 
 See [`deploy/vps/README.md`](deploy/vps/README.md) for the reviewed operational
-procedure.
+procedure. Render remains the rollback target until VPS networking, HTTPS and bot
+traffic are verified.
 
 ## Versioning
 
