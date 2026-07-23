@@ -6,40 +6,43 @@ on:
       - CI
     types:
       - completed
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: vps-api-${{ github.event.workflow_run.head_branch }}
+  group: vps-api-development
   cancel-in-progress: false
 
 jobs:
   deploy:
     if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      (github.event.workflow_run.head_branch == 'master' ||
-       startsWith(github.event.workflow_run.head_branch, 'release'))
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref == 'refs/heads/master') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'master')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
-      name: ${{ github.event.workflow_run.head_branch == 'master' && 'development' || 'production' }}
+      name: development
     env:
-      DEPLOY_ENV: ${{ github.event.workflow_run.head_branch == 'master' && 'development' || 'production' }}
+      DEPLOY_ENV: development
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
       VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
       VPS_PORT: 22022
       VPS_DEPLOY_PATH: ${{ vars.VPS_DEPLOY_PATH || '/opt/0xda-market' }}
       VPS_RUNTIME_PATH: /opt/0xda-market-runtime
-      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+      RELEASE_SHA: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
 
     steps:
       - name: Validate deployment configuration
         run: |
           set -Eeuo pipefail
-          case "$DEPLOY_ENV" in development|production) ;; *) exit 1 ;; esac
+          test "$DEPLOY_ENV" = development
           test -n "$VPS_HOST"
           test -n "$VPS_USER"
           test -n "$VPS_SSH_PRIVATE_KEY"
@@ -48,7 +51,7 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ env.RELEASE_SHA }}
 
       - name: Configure SSH
         run: |
