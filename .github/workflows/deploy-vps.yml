@@ -30,6 +30,7 @@ jobs:
       name: development
     env:
       DEPLOY_ENV: development
+      FORCE_ACTIVATE: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
       VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
@@ -43,6 +44,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           test "$DEPLOY_ENV" = development
+          case "$FORCE_ACTIVATE" in 0|1) ;; *) exit 1 ;; esac
           test -n "$VPS_HOST"
           test -n "$VPS_USER"
           test -n "$VPS_SSH_PRIVATE_KEY"
@@ -68,11 +70,11 @@ jobs:
           tar --exclude=.git --exclude='deploy/vps/.env' -czf "$archive" .
           scp -P "$VPS_PORT" "$archive" "$VPS_USER@$VPS_HOST:/tmp/"
 
-      - name: Stage or refresh environment
+      - name: Stage or activate development
         run: |
           set -Eeuo pipefail
           ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
-            "DEPLOY_PATH='$VPS_DEPLOY_PATH' RUNTIME_PATH='$VPS_RUNTIME_PATH' DEPLOY_ENV='$DEPLOY_ENV' RELEASE_SHA='$RELEASE_SHA' bash -s" <<'REMOTE'
+            "DEPLOY_PATH='$VPS_DEPLOY_PATH' RUNTIME_PATH='$VPS_RUNTIME_PATH' DEPLOY_ENV='$DEPLOY_ENV' FORCE_ACTIVATE='$FORCE_ACTIVATE' RELEASE_SHA='$RELEASE_SHA' bash -s" <<'REMOTE'
           set -Eeuo pipefail
 
           environment_root="$DEPLOY_PATH/environments/$DEPLOY_ENV"
@@ -85,6 +87,7 @@ jobs:
 
           test -f "$shared_env"
           grep -qx "DEPLOY_ENV=$DEPLOY_ENV" "$shared_env"
+          case "$FORCE_ACTIVATE" in 0|1) ;; *) exit 1 ;; esac
 
           rm -rf "$release_dir"
           mkdir -p "$release_dir"
@@ -96,7 +99,7 @@ jobs:
             active_environment="$(<"$RUNTIME_PATH/active-environment")"
           fi
 
-          if [[ "$active_environment" == "$DEPLOY_ENV" ]]; then
+          if [[ "$FORCE_ACTIVATE" == "1" || "$active_environment" == "$DEPLOY_ENV" ]]; then
             if ! DEPLOY_MODE=activate bash "$release_dir/deploy/vps/deploy.sh"; then
               if [[ -n "$previous_release" && -d "$previous_release/deploy/vps" ]]; then
                 DEPLOY_MODE=activate bash "$previous_release/deploy/vps/deploy.sh" || true
