@@ -82,6 +82,11 @@ jobs:
           bash -n deploy/vps/deploy.sh
           bash -n deploy/vps/switch-environment.sh
           bash test/vps_switch_test.sh
+          cat >deploy/vps/.env <<'ENV'
+          DEPLOY_ENV=development
+          DOMAIN=example.invalid
+          ENV
+          docker compose --file deploy/vps/compose.yaml --env-file deploy/vps/.env config --quiet
 
   docker:
     runs-on: ubuntu-latest
@@ -89,3 +94,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build --tag 0xda-market:test .
+      - name: Validate Caddy configuration
+        run: |
+          docker run --rm \
+            --env DOMAIN=example.invalid \
+            --volume "$PWD/deploy/vps/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2-alpine \
+            caddy validate --config /etc/caddy/Caddyfile
