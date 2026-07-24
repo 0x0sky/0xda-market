@@ -10,6 +10,7 @@ fi
 
 deploy_mode="${DEPLOY_MODE:-activate}"
 deploy_environment="$(sed -n 's/^DEPLOY_ENV=//p' .env | tail -n 1)"
+edge_network="${MARKET_EDGE_NETWORK:-zero-x-da-market-edge}"
 
 case "$deploy_mode" in
   stage|activate) ;;
@@ -26,6 +27,10 @@ case "$deploy_environment" in
     exit 1
     ;;
 esac
+
+if ! docker network inspect "$edge_network" >/dev/null 2>&1; then
+  docker network create "$edge_network" >/dev/null
+fi
 
 docker compose config --quiet
 docker compose build --pull api
