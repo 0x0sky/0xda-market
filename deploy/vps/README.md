@@ -167,8 +167,8 @@ The controller:
 5. writes `active-environment` atomically;
 6. restarts the previous environment when the target fails.
 
-Switching to production additionally requires the workflow confirmation checkbox
-and `CONFIRM_PRODUCTION=1` inside the controller.
+Selecting `production` in the workflow is the explicit cutover confirmation.
+The workflow derives `CONFIRM_PRODUCTION=1` for the controller automatically.
 
 The same operation can be inspected manually on the VPS:
 
