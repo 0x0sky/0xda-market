@@ -48,7 +48,7 @@ and enforced by architecture tests.
 - internal-UUID administrator authorization;
 - localized product catalog and append-only price history;
 - PostgreSQL and in-memory adapters;
-- active-passive development and production VPS deployment.
+- health-gated development VPS deployment with Caddy HTTPS and bot routing.
 
 ## Domain lifecycle
 
@@ -286,17 +286,21 @@ CI runs:
 
 ## Deployment
 
-VPS deployment is active-passive:
+The VPS is the canonical runtime:
 
-- `master` stages `development`;
-- `release*` stages `production`;
-- only one complete core + bot environment may be active;
-- switching production requires explicit confirmation;
-- staging never registers a Telegram webhook.
+- after green CI, `master` stages or refreshes `development`;
+- Caddy serves `https://0xda-market.nilx.one` and forwards `/bot/*` to the client
+  bot over the private edge network;
+- active refreshes are health-gated and attempt to restart the previous release
+  on failure;
+- production directories remain reserved, but production deployment is not
+  enabled by the current automatic workflows;
+- environment switches, webhook changes, DNS changes and retirement of the old
+  host remain separate reviewed operations.
 
-See [`deploy/vps/README.md`](deploy/vps/README.md) for the reviewed operational
-procedure. Render remains the rollback target until VPS networking, HTTPS and bot
-traffic are verified.
+See [`deploy/vps/README.md`](deploy/vps/README.md) for deployment setup and
+[`deploy/vps/OPERATIONS.md`](deploy/vps/OPERATIONS.md) for reboot verification,
+HTTPS, health, logs, backups and rollback.
 
 ## Versioning
 
