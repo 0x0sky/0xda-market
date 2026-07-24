@@ -72,24 +72,26 @@ sort -u /home/deploy/.ssh/authorized_keys -o /home/deploy/.ssh/authorized_keys
 chown deploy:deploy /home/deploy/.ssh/authorized_keys
 chmod 0600 /home/deploy/.ssh/authorized_keys
 
-# Preserve every configured SSH port, and especially the port used by the
-# current session, before enabling UFW. The deployment workflows connect to
-# port 22022, so keep that firewall rule open even if sshd is not listening on
-# it yet.
+# Keep every currently configured or connected SSH port reachable while adding
+# the fixed GitHub Actions deployment port. Preserving the active session port
+# prevents a bootstrap rerun from locking the administrator out of the VPS.
 required_deploy_port=22022
-mapfile -t ssh_ports < <(
+mapfile -t current_ssh_ports < <(
   {
     if [[ -n "${SSH_CONNECTION:-}" ]]; then
       awk '{print $4}' <<<"${SSH_CONNECTION}"
     fi
     sshd -T 2>/dev/null | awk '$1 == "port" { print $2 }'
-    printf '%s\n' "$required_deploy_port"
   } | awk '/^[0-9]+$/' | sort -nu
 )
 
-if [[ "${#ssh_ports[@]}" -eq 0 ]]; then
-  ssh_ports=("$required_deploy_port")
+if [[ "${#current_ssh_ports[@]}" -eq 0 ]]; then
+  current_ssh_ports=(22)
 fi
+
+mapfile -t ssh_ports < <(
+  printf '%s\n' "${current_ssh_ports[@]}" "$required_deploy_port" | sort -nu
+)
 
 for ssh_port in "${ssh_ports[@]}"; do
   ufw allow "${ssh_port}/tcp"
@@ -99,12 +101,31 @@ ufw allow 443/tcp
 ufw allow 443/udp
 ufw --force enable
 
-if ! sshd -T 2>/dev/null | awk '$1 == "port" { print $2 }' | grep -qx "$required_deploy_port"; then
-  cat >&2 <<EOF_WARNING
-WARNING: UFW allows TCP ${required_deploy_port}, but sshd does not currently
-listen on that port. Configure and test SSH on ${required_deploy_port} before
-running a deployment workflow.
-EOF_WARNING
+install -m 0755 -d /etc/ssh/sshd_config.d
+ssh_port_config=/etc/ssh/sshd_config.d/60-0xda-market-ports.conf
+{
+  echo '# Managed by 0xda-market VPS bootstrap.'
+  for ssh_port in "${ssh_ports[@]}"; do
+    printf 'Port %s\n' "$ssh_port"
+  done
+} >"$ssh_port_config"
+chmod 0644 "$ssh_port_config"
+
+sshd -t
+systemctl reload ssh
+
+ssh_ready=0
+for _ in $(seq 1 10); do
+  if ss -H -lnt | awk '{print $4}' | grep -Eq "(^|:)${required_deploy_port}$"; then
+    ssh_ready=1
+    break
+  fi
+  sleep 1
+done
+
+if [[ "$ssh_ready" != 1 ]]; then
+  echo "SSH did not start listening on TCP ${required_deploy_port}" >&2
+  exit 1
 fi
 
 cat <<EOF_SUMMARY
