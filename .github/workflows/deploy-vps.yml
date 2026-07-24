@@ -69,7 +69,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: .deps/mcp-control/go.mod
-          cache-dependency-path: .deps/mcp-control/go.sum
+          cache: false
 
       - name: Build pinned mcp-control
         run: |
